@@ -18,7 +18,7 @@
 
 (println "start:" (new java.util.Date))
 
-(def run-tests (atom false))
+(defonce run-tests (atom false))
 (defn toggle-tests [] (swap! run-tests #(not %)))
 
 (def profile? (atom false))
@@ -35,6 +35,8 @@
 (defn debugging [flags]
   (and @global-debugging
        (every? #(contains? @debugging-flags %) flags)))
+
+;; (play-algo 1 false)
 
 #_{:clj-kondo/ignore [:unresolved-symbol]}
 (comment
@@ -818,6 +820,7 @@
 (defn algo [oneshot-nesting?]
   (let [;; let h be hash of new leaf
         ;; h (str @leaf-count "-hash")
+        ;; h #{@leaf-count}
         h #{(inc @leaf-count)}
         ;; pointer (get-pointer)
         ;; create object P, set P.hash<-h, set P.height<-0, set P.left<-lastP
@@ -829,6 +832,7 @@
     (swap! node-map #(assoc % h P))
     ;; (swap! node-map #(assoc % pointer P))
     ;; A[R*n+1]<-h
+    ;; (add-internal h (inc (* 2 @leaf-count)))
     (add-internal h (inc (* 2 (inc @leaf-count))))
 
     ;; 2. Check mergeable
@@ -987,21 +991,21 @@
   []
   (every? (fn [[k v]] (and
                        (= k (if (and
-                                 ;; first, verify that left leaf is not nil
+                                ;; first, verify that left leaf is not nil
                                  (some? (:left v))
-                                 ;; then, verify that left & right "children" are even in the same range
+                                ;; then, verify that left & right "children" are even in the same range
                                  (let [left-child (get-child v :left)]
                                    (if (= :peak (:type left-child))
                                      (distinct-ranges? left-child (get-child v :right))
-                                     ;; else
+                                    ;; else
                                      (if (= :range (:type left-child))
                                        (not= v (get-parent left-child))
-                                       ;; if parent neither range nor belt, throw exception
+                                      ;; if parent neither range nor belt, throw exception
                                        (throw (Exception. "unhandled type of left child"))))))
-                              ;; if in distinct ranges, then left child does not get included in parent range node's "hash"
-                              ;; TODO: stricter condition for distinct ranges of two range nodes
+                             ;; if in distinct ranges, then left child does not get included in parent range node's "hash"
+                             ;; TODO: stricter condition for distinct ranges of two range nodes
                               (:right v)
-                              ;; else, "hash" both
+                             ;; else, "hash" both
                               (clojure.set/union (or (:left v) #{}) (:right v))))
                        (= #{} (clojure.set/intersection (or (:left v) #{}) (:right v)))
                        (verify-all-ancestry v)))
@@ -1045,6 +1049,7 @@
   (let [n 5000]
     (reset-all)
     (last (take-while #(true? (second %))
+                      ;; verify parenting with oneshot-nesting
                       (take n (map-indexed (fn [i v] [i v]) (repeatedly #(do (algo true) (verify-parenting)))))))))
 ;; => 4999 (i.e. all passed)
 
@@ -1053,6 +1058,7 @@
   (let [n 5000]
     (reset-all)
     (last (take-while #(true? (second %))
+                      ;; verify parenting without oneshot-nesting
                       (take n (map-indexed (fn [i v] [i v]) (repeatedly #(do (algo false) (verify-parenting)))))))))
 ;; => 4999 (i.e. all passed)
 
@@ -1079,6 +1085,7 @@
   (let [n 1337]
     (= (into #{} (play-algo n false))
        (into #{} (play-algo-oneshot-end n))))
+  ;; does one-shot-end match normal run?
   ;; => true
   )
 
@@ -1122,6 +1129,9 @@
 (= manual-algos-cached
    (map #(play-algo % false) (range 1 (inc (count manual-algos-cached)))))
 ;; => false
+
+(first manual-algos-cached)
+(play-algo 1 false)
 
 ;; DONE: should check that reason cached algos don't match is just that I changed the indexing to start at 1
 ;; simplest is to revert that change, verify all tests pass, and the bump it & update cache
@@ -1233,7 +1243,9 @@
                                         (into #{} (map mapulation (vals (dissoc (:range-nodes (nth @manual-only-algos n)) #{})))))])
                 (range (min (count @oneshot-only-algos) (count @manual-only-algos))))))
 
+;; TODO: bitdepth exceeded?
 (filter #(= "new leaf forms a range alone" ((comp first second) %)) (map-indexed (fn [idx n] [idx (merge-rule n)]) (range 0 60)))
+;; -> bitlength should exceed 2-adic-order by at least 2
 
 ;; test: bj always 1
 (every? #(= "1" %)
@@ -1578,6 +1590,10 @@
                                   :belt (:belt style)})
                    "yellow")}
        (if (and (parent node) (or belting? (not (contains? #{:belt :range} (:type (get-parent node)))))) [(id (parent node)) (id node)] [(id node) (id node)])])))
+
+(get-node #{17 18 19 20 21 22 23} :internal)
+
+(keys @(get storage-maps :internal))
 
 (defn co-path-ids [node]
   (letfn [(id [node]
